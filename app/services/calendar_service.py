@@ -1,4 +1,5 @@
 import os
+import json
 import datetime
 from typing import Optional
 from google.oauth2 import service_account
@@ -11,18 +12,34 @@ CREDENTIALS_FILE = 'google_credentials.json'
 def get_calendar_service():
     """
     Authenticate and return the Google Calendar service.
-    Returns None if credentials file is missing.
+    Supports loading credentials from:
+    1. 'google_credentials.json' file (local development).
+    2. 'GOOGLE_CREDENTIALS_JSON' env variable (cloud deployment).
+    Returns None if credentials are missing or invalid.
     """
-    if not os.path.exists(CREDENTIALS_FILE):
-        print(f"⚠️ Warning: {CREDENTIALS_FILE} not found. Calendar sync will be skipped.")
-        return None
+    creds = None
     
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            CREDENTIALS_FILE, scopes=SCOPES
-        )
+        # 1. Try file
+        if os.path.exists(CREDENTIALS_FILE):
+             print(f"🔑 Loading credentials from file: {CREDENTIALS_FILE}")
+             creds = service_account.Credentials.from_service_account_file(
+                CREDENTIALS_FILE, scopes=SCOPES
+             )
+        # 2. Try Env Var
+        elif os.environ.get('GOOGLE_CREDENTIALS_JSON'):
+             print("🔑 Loading credentials from Environment Variable")
+             info = json.loads(os.environ.get('GOOGLE_CREDENTIALS_JSON'))
+             creds = service_account.Credentials.from_service_account_info(
+                info, scopes=SCOPES
+             )
+        else:
+            print("⚠️ Warning: No Google credentials found (file or env). Calendar sync skipped.")
+            return None
+
         service = build('calendar', 'v3', credentials=creds)
         return service
+
     except Exception as e:
         print(f"❌ Error initializing Google Calendar service: {e}")
         return None
