@@ -10,11 +10,11 @@ CHECK_AVAILABILITY_TOOL = {
             "properties": {
                 "day": {
                     "type": "string",
-                    "description": "The day to check availability for (e.g., 'tomorrow', 'Monday')."
+                    "description": "The day to check availability for, in ISO 8601 format YYYY-MM-DD (e.g., '2024-05-20')."
                 },
                 "time": {
                     "type": "string",
-                    "description": "The specific time to check (e.g., '14:00', '2pm')."
+                    "description": "The specific time to check in HH:MM format (e.g., '14:00')."
                 }
             },
             "required": ["day", "time"]
@@ -32,7 +32,7 @@ BOOK_APPOINTMENT_TOOL = {
             "properties": {
                 "day": {
                     "type": "string",
-                    "description": "The day of the appointment."
+                    "description": "The day of the appointment in ISO 8601 format YYYY-MM-DD."
                 },
                 "time": {
                     "type": "string",
