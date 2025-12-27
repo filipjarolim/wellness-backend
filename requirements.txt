@@ -4,3 +4,4 @@ sqlmodel
 streamlit
 pandas
 python-multipart
+pydantic-settings
