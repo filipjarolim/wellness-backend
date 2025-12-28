@@ -98,8 +98,125 @@ def check_calendar_availability(start_time: datetime.datetime, duration_minutes:
         # Default to True so we don't block bookings if API fails, 
         # but in strict mode we might want to return False
         return True
+    
+    except Exception as e:
+        logger.error(f"❌ Error checking calendar availability: {e}")
+        return True
 
-def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_time: Optional[datetime.datetime] = None) -> Optional[str]:
+def get_busy_slots(start_time: datetime.datetime, end_time: datetime.datetime) -> list:
+    """
+    Returns a list of busy time ranges (tuples of start, end datetime) 
+    between start_time and end_time.
+    """
+    service = get_calendar_service()
+    if not service:
+        return []
+
+    # Ensure timezones
+    if start_time.tzinfo is None:
+        start_time = start_time.replace(tzinfo=PRAGUE_TZ)
+    if end_time.tzinfo is None:
+        end_time = end_time.replace(tzinfo=PRAGUE_TZ)
+
+    time_min = start_time.isoformat()
+    time_max = end_time.isoformat()
+
+    try:
+        events_result = service.events().list(
+            calendarId=CALENDAR_ID, 
+            timeMin=time_min, 
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+        
+        busy_slots = []
+        for event in events:
+            start = event['start'].get('dateTime') or event['start'].get('date')
+            end = event['end'].get('dateTime') or event['end'].get('date')
+            
+            # Simple parsing of ISO strings
+            # Google API returns ISO strings, e.g. "2025-01-14T14:00:00+01:00"
+            if start and end:
+                try:
+                    s_dt = datetime.datetime.fromisoformat(start)
+                    e_dt = datetime.datetime.fromisoformat(end)
+                    busy_slots.append((s_dt, e_dt))
+                except ValueError:
+                    continue # Skip full-day events or weird formats if parsing fails
+                    
+        return busy_slots
+
+    except Exception as e:
+        logger.error(f"❌ Error getting busy slots: {e}")
+        return []
+
+    except Exception as e:
+        logger.error(f"❌ Error getting busy slots: {e}")
+        return []
+
+def cancel_event_by_description(phone_number: str) -> str:
+    """
+    Finds future events with the given phone number in description and deletes them.
+    Returns a status message.
+    """
+    service = get_calendar_service()
+    if not service:
+        return "Služba kalendáře není dostupná."
+
+    now = datetime.datetime.now(PRAGUE_TZ)
+    time_min = now.isoformat()
+    
+    try:
+        # List future events
+        events_result = service.events().list(
+            calendarId=CALENDAR_ID, 
+            timeMin=time_min, 
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+        
+        found_and_deleted = False
+        deleted_date = ""
+
+        for event in events:
+            desc = event.get('description', '')
+            if phone_number in desc:
+                # Found it!
+                start = event['start'].get('dateTime') or event['start'].get('date')
+                event_id = event['id']
+                
+                # Delete
+                service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+                logger.info(f"🗑️ Smazán event: {event.get('summary')} ({start})")
+                
+                found_and_deleted = True
+                # Format date for user
+                try:
+                    dt = datetime.datetime.fromisoformat(start)
+                    deleted_date = dt.strftime("%d.%m. %H:%M")
+                except:
+                    deleted_date = start
+                    
+                # We stop after first match? Or delete all? 
+                # Prompt says "Pokud najde, smaže událost" (singular?). 
+                # Usually better to delete one specific or all future? 
+                # Let's assume one booking active usually, or delete all future.
+                # "Vaše rezervace na [DATUM] byla zrušena." implies one.
+                break 
+        
+        if found_and_deleted:
+            return f"Vaše rezervace na {deleted_date} byla zrušena."
+        else:
+            return "Na toto číslo nemám žádnou rezervaci."
+
+    except Exception as e:
+        logger.error(f"❌ Error cancelling event: {e}")
+        return "Došlo k chybě při rušení rezervace."
+
+def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_time: Optional[datetime.datetime] = None, phone: str = "") -> Optional[str]:
     """
     Create an event in Google Calendar.
     Returns the htmlLink of the event or None.
@@ -154,10 +271,14 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_ti
     start_utc = start_time.astimezone(UTC)
     end_utc = end_time.astimezone(UTC)
 
+    description = 'Rezervace přes AI Asistenta'
+    if phone:
+        description += f"\nTelefon: {phone}"
+
     event_body = {
         'summary': f"{booking.name} - {booking.service}",
         'location': 'Wellness Pohoda',
-        'description': 'Rezervace přes AI Asistenta',
+        'description': description,
         'start': {
             'dateTime': start_utc.isoformat().replace('+00:00', 'Z'),
             'timeZone': 'UTC',
