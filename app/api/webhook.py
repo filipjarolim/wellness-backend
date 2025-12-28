@@ -71,7 +71,21 @@ async def vapi_webhook(
                         day = arguments.get("day")
                         time = arguments.get("time")
                         name = arguments.get("name")
-                        phone = arguments.get("phone", "") # Extract phone
+                        
+                        # 1. Robust Phone Extraction
+                        phone = arguments.get("phone")
+                        if not phone:
+                             logger.info("⚠️ Phone missing in args, trying Caller ID from payload...")
+                             try:
+                                 phone = message.get("call", {}).get("customer", {}).get("number")
+                                 if phone:
+                                     logger.info(f"✅ Found Phone in Caller ID: {phone}")
+                             except:
+                                 pass
+                        
+                        if not phone:
+                            phone = "" # Ensure string type if still None
+
                         service = arguments.get("service", "General Service")
                         # book_appointment signature: (day, time, name, phone, service)
                         result_content = await booking_service.book_appointment(day, time, name, phone, service)

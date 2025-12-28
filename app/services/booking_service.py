@@ -137,19 +137,25 @@ class BookingService:
         start_save_process = datetime.now()
         logger.info(f"⏳ Začínám booking process pro: {name}, tel: {phone}")
 
+        if not phone:
+            logger.error("❌ CHYBA: Chybí telefonní číslo! Nelze vytvořit rezervaci.")
+            return "Omlouvám se, ale nemám vaše telefonní číslo, které je nutné pro potvrzení rezervace."
+
         # 1. Supabase Client Management
         client_id = None
-        if phone:
-            try:
-                logger.info(f"🔍 Hledám/Vytvářím klienta v DB: {phone}")
-                client_dict = await db_service.get_or_create_client(phone, name)
-                if client_dict:
-                    client_id = client_dict.get('id')
-                    logger.info(f"✅ Klient ID {client_id} připraven.")
-                else:
-                    logger.warning("⚠️ Nepodařilo se získat ID klienta ze Supabase.")
-            except Exception as e:
-                logger.error(f"❌ Chyba při správě klienta: {e}")
+        # if phone: # Condition removed, we enforced phone above
+        try:
+            logger.info(f"🔍 Hledám/Vytvářím klienta v DB: {phone}")
+            client_dict = await db_service.get_or_create_client(phone, name)
+            if client_dict:
+                client_id = client_dict.get('id')
+                logger.info(f"✅ Klient ID {client_id} připraven.")
+            else:
+                logger.warning("⚠️ Nepodařilo se získat ID klienta ze Supabase.")
+        except Exception as e:
+            logger.error(f"❌ Chyba při správě klienta: {e}")
+            # Should we stop? Ideally yes, but maybe Calendar is enough for now?
+            # User wants robust DB, so maybe let's continue but log heavily.
         
         # 2. Sync to Google Calendar
         logger.info('🚀 Calling Google Calendar...')
