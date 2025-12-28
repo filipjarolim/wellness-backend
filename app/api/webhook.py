@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Request, Depends
 import logging
-import traceback
 from typing import Dict, Any
 from sqlmodel import Session
 
@@ -9,7 +8,7 @@ from app.services.llm_service import get_assistant_config
 from app.core.database import get_session
 
 router = APIRouter()
-logger = logging.getLogger("uvicorn")
+logger = logging.getLogger(__name__)
 
 @router.post("/webhook")
 async def vapi_webhook(
@@ -57,8 +56,8 @@ async def vapi_webhook(
                 arguments = function_def.get("arguments", {})
 
                 # 3. Explicit Logging
-                print(f"🔔 ZACHYCENO VOLÁNÍ: {function_name}")
-                print(f"📦 ARGUMENTY: {arguments}")
+                logger.info(f"🔔 ZACHYCENO VOLÁNÍ: {function_name}")
+                # logger.debug(f"📦 ARGUMENTY: {arguments}")
 
                 result_content = "Error: Function not found"
 
@@ -77,12 +76,11 @@ async def vapi_webhook(
                         resp = booking_service.book_appointment(day, time, name, service)
                         result_content = resp.get("message", "Booking failed")
                     else:
-                        print(f"⚠️ Unknown function name: {function_name}")
+                        logger.warning(f"⚠️ Unknown function name: {function_name}")
 
                 except Exception as e:
                     # Capture full traceback
-                    print(f"❌ CHYBA VE FUNKCI {function_name}:")
-                    traceback.print_exc()
+                    logger.error(f"❌ CHYBA VE FUNKCI {function_name}: {e}", exc_info=True)
                     result_content = f"Došlo k chybě při zpracování požadavku: {str(e)}"
 
                 results.append({
@@ -91,14 +89,14 @@ async def vapi_webhook(
                 })
             
             # Return Vapi structured response
+            # Return Vapi structured response
             response = {"results": results}
-            # print(f"📤 ODPOVĚĎ PRO VAPI: {response}")
+            # logger.debug(f"📤 ODPOVĚĎ PRO VAPI: {response}")
             return response
 
         return {}
 
     except Exception as e:
-        print("❌ CRITICAL WEBHOOK ERROR (Payload parsing or other):")
-        traceback.print_exc()
+        logger.error("❌ CRITICAL WEBHOOK ERROR:", exc_info=True)
         # Return a safe empty dict or error structure to prevent timeout hang if possible
         return {}
