@@ -9,6 +9,7 @@ from app.models.db_models import Booking
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 CREDENTIALS_FILE = 'google_credentials.json'
+CALENDAR_ID = os.environ.get('GOOGLE_CALENDAR_ID', 'primary')
 
 def get_calendar_service():
     """
@@ -66,8 +67,9 @@ def check_calendar_availability(start_time: datetime.datetime, duration_minutes:
     time_max = (start_time + datetime.timedelta(minutes=duration_minutes)).isoformat() + 'Z'
 
     try:
+        print(f'🔍 Kontroluji dostupnost v kalendáři: {CALENDAR_ID}', flush=True)
         events_result = service.events().list(
-            calendarId='primary', 
+            calendarId=CALENDAR_ID, 
             timeMin=time_min, 
             timeMax=time_max,
             singleEvents=True,
@@ -142,8 +144,9 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60) -> Optio
     }
 
     try:
+        print(f'✏️ Zapisuji do kalendáře: {CALENDAR_ID}', flush=True)
         print(f'📤 Odesílám event: {event_body}', flush=True)
-        event = service.events().insert(calendarId='primary', body=event_body).execute()
+        event = service.events().insert(calendarId=CALENDAR_ID, body=event_body).execute()
         print(f"📅 Event created: {event.get('htmlLink')}")
         return event.get('htmlLink')
         return event.get('htmlLink')

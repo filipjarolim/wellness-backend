@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str = "dev_secret_key"
+    
+    # Google
+    GOOGLE_CALENDAR_ID: str = "primary"
 
     class Config:
         env_file = ".env"
