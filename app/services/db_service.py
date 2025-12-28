@@ -30,7 +30,7 @@ class DBService:
     async def get_or_create_client(self, phone: str, name: str) -> dict:
         """
         Finds a client by phone. If not found, creates a new one.
-        Returns dict with client 'id' and 'name'.
+        Smart Logic: Updates name if better/longer name is provided.
         """
         client = await self.get_client()
         if not client:
@@ -42,8 +42,19 @@ class DBService:
             
             if response.data:
                 client_data = response.data[0]
-                # logger.debug(f"found client: {client_data}")
-                return {'id': client_data['id'], 'name': client_data.get('full_name', name)}
+                existing_name = client_data.get('full_name') or ""
+                final_name = existing_name
+
+                # Smart Name Update: If new name is provided and is longer (e.g. "Petr" -> "Petr Novák")
+                if name and len(name.strip()) > len(existing_name.strip()):
+                    try:
+                        await client.table('clients').update({'full_name': name}).eq('id', client_data['id']).execute()
+                        logger.info(f"✨ Vylepšuji jméno klienta (ID {client_data['id']}): '{existing_name}' -> '{name}'")
+                        final_name = name
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to update client name: {e}")
+                
+                return {'id': client_data['id'], 'name': final_name}
             
             # Create new
             new_client = {'phone_number': phone, 'full_name': name}
@@ -87,8 +98,7 @@ class DBService:
                 'client_id': client_id,
                 'start_time': time.isoformat(),
                 'service_type': service_type,
-                'gcal_event_id': gcal_id,
-                'created_at': datetime.now().isoformat()
+                'gcal_event_id': gcal_id
             }
             
             response = await client.table('bookings').insert(booking_data).execute()

@@ -109,10 +109,35 @@ class BookingService:
             
         return await cancel_event_by_description(phone_number)
 
+    def normalize_name(self, name: str) -> str:
+        """
+        Cleans up the name: Title Case, strips whitespace, fixes common STT errors.
+        """
+        if not name:
+            return ""
+        
+        name = name.strip().title()
+        
+        # STT Corrections
+        replacements = {
+            "Pattern": "Petr",
+        }
+        for wrong, correct in replacements.items():
+            if wrong in name:
+                name = name.replace(wrong, correct)
+                
+        return name
+
     async def book_appointment(self, day: str, time: str, name: str, phone: str = "", service: str = "general") -> str:
         """
         Book an appointment (Async).
         """
+        # Normalize Name
+        original_name = name
+        name = self.normalize_name(name)
+        if name != original_name:
+            logger.info(f"🧹 Name Normalized: '{original_name}' -> '{name}'")
+
         if not day or not time or not name:
              logger.info(f'📥 Booking Request - Day: {day}, Time: {time}')
              return "Omlouvám se, ale chybí mi některé údaje pro vytvoření rezervace."
