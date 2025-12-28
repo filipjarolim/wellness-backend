@@ -4,6 +4,7 @@ import datetime
 from typing import Optional
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from app.models.db_models import Booking
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -19,29 +20,35 @@ def get_calendar_service():
     """
     creds = None
     
+    print('🔑 Zkouším načíst credentials...', flush=True)
+
     try:
         # 1. Try file
         if os.path.exists(CREDENTIALS_FILE):
-             print(f"🔑 Loading credentials from file: {CREDENTIALS_FILE}")
+             print(f"🔑 Loading credentials from file: {CREDENTIALS_FILE}", flush=True)
+             print('✅ Načteno ze souboru.', flush=True)
              creds = service_account.Credentials.from_service_account_file(
                 CREDENTIALS_FILE, scopes=SCOPES
              )
         # 2. Try Env Var
         elif os.environ.get('GOOGLE_CREDENTIALS_JSON'):
-             print("🔑 Loading credentials from Environment Variable")
+             print("🔑 Loading credentials from Environment Variable", flush=True)
+             print('✅ Načteno z ENV (GOOGLE_CREDENTIALS_JSON).', flush=True)
              info = json.loads(os.environ.get('GOOGLE_CREDENTIALS_JSON'))
              creds = service_account.Credentials.from_service_account_info(
                 info, scopes=SCOPES
              )
         else:
-            print("⚠️ Warning: No Google credentials found (file or env). Calendar sync skipped.")
+            print("⚠️ Warning: No Google credentials found (file or env). Calendar sync skipped.", flush=True)
             return None
+
+        print(f'🤖 Service Account Email: {creds.service_account_email}', flush=True)
 
         service = build('calendar', 'v3', credentials=creds)
         return service
 
     except Exception as e:
-        print(f"❌ Error initializing Google Calendar service: {e}")
+        print(f"❌ Error initializing Google Calendar service: {e}", flush=True)
         return None
 
 def check_calendar_availability(start_time: datetime.datetime, duration_minutes: int = 60) -> bool:
@@ -135,9 +142,14 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60) -> Optio
     }
 
     try:
+        print(f'📤 Odesílám event: {event_body}', flush=True)
         event = service.events().insert(calendarId='primary', body=event_body).execute()
         print(f"📅 Event created: {event.get('htmlLink')}")
         return event.get('htmlLink')
+        return event.get('htmlLink')
+    except HttpError as error:
+        print(f'❌ Google API Error: {error.content}', flush=True)
+        return None
     except Exception as e:
-        print(f"❌ Error creating calendar event: {e}")
+        print(f"❌ Error creating calendar event: {e}", flush=True)
         return None

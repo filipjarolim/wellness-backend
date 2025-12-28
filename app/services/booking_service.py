@@ -117,7 +117,10 @@ class BookingService:
         Book an appointment and save to DB.
         """
         if not day or not time or not name:
-            return {"result": "error", "message": "Missing details for booking."}
+             print(f'📥 Booking Request - Day: {day}, Time: {time}', flush=True)
+             return {"result": "error", "message": "Missing details for booking."}
+
+        print(f'📥 Booking Request - Day: {day}, Time: {time}', flush=True)
 
         # Check availability again
         availability_msg = self.check_availability(day, time)
@@ -126,6 +129,7 @@ class BookingService:
 
         # Parse date for storage normalization and Calendar
         start_dt = self._parse_datetime(day, time)
+        print(f'📅 Vypočítaný Start Time: {start_dt}', flush=True)
         
         # Decide what to save to DB. Ideally ISO format.
         if start_dt:
@@ -146,16 +150,16 @@ class BookingService:
         print(f"✅ NOVÁ REZERVACE (DB): {name} na {save_day} v {save_time} - {service} (ID: {booking.id})")
         
         # Sync to Google Calendar
-        print('🚀 Calling Google Calendar...')
+        print('🚀 Calling Google Calendar...', flush=True)
         try:
             # Modify booking object to ensure ISO format is used for Calendar creation logic 
             # (although we already saved ISO to DB if parsing succeeded)
             # The calendar service will re-parse, but since we now provide ISO, it should pass.
             html_link = create_calendar_event(booking)
             if html_link:
-                 print(f"✅ Synced to Calendar: {html_link}")
+                 print(f"✅ Synced to Calendar: {html_link}", flush=True)
         except Exception as e:
-            print(f"❌ Google Error: {e}")
+            print(f"❌ Google Error: {e}", flush=True)
             traceback.print_exc()
         
         return {"result": "success", "message": "Termín je úspěšně rezervován."}
