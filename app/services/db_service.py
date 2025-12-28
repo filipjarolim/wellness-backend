@@ -43,15 +43,15 @@ class DBService:
             if response.data:
                 client_data = response.data[0]
                 # logger.debug(f"found client: {client_data}")
-                return {'id': client_data['id'], 'name': client_data['name']}
+                return {'id': client_data['id'], 'name': client_data.get('full_name', name)}
             
             # Create new
-            new_client = {'phone_number': phone, 'name': name}
+            new_client = {'phone_number': phone, 'full_name': name}
             response = await client.table('clients').insert(new_client).execute()
             
             if response.data:
                 logger.info(f"🆕 New client created: {name} ({phone})")
-                return {'id': response.data[0]['id'], 'name': response.data[0]['name']}
+                return {'id': response.data[0]['id'], 'name': response.data[0].get('full_name', name)}
             
         except Exception as e:
             logger.error(f"❌ DB Error (get_or_create_client): {e}")
@@ -66,9 +66,9 @@ class DBService:
             return None
             
         try:
-            response = await client.table('clients').select("name").eq('phone_number', phone).execute()
+            response = await client.table('clients').select("full_name").eq('phone_number', phone).execute()
             if response.data:
-                return response.data[0]['name']
+                return response.data[0]['full_name']
         except Exception as e:
             logger.error(f"❌ DB Error (get_client_by_phone): {e}")
             
