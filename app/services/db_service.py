@@ -85,7 +85,7 @@ class DBService:
         try:
             booking_data = {
                 'client_id': client_id,
-                'booking_time': time.isoformat(),
+                'start_time': time.isoformat(),
                 'service_type': service_type,
                 'gcal_event_id': gcal_id,
                 'created_at': datetime.now().isoformat()
