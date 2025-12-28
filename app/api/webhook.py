@@ -71,9 +71,10 @@ async def vapi_webhook(
                         day = arguments.get("day")
                         time = arguments.get("time")
                         name = arguments.get("name")
+                        phone = arguments.get("phone", "") # Extract phone
                         service = arguments.get("service", "General Service")
-                        # book_appointment now returns a direct string message
-                        result_content = await booking_service.book_appointment(day, time, name, service)
+                        # book_appointment signature: (day, time, name, phone, service)
+                        result_content = await booking_service.book_appointment(day, time, name, phone, service)
                     else:
                         logger.warning(f"⚠️ Unknown function name: {function_name}")
 

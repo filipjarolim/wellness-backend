@@ -38,7 +38,7 @@ class DBService:
 
         try:
             # Check if exists
-            response = await client.table('clients').select("*").eq('phone', phone).execute()
+            response = await client.table('clients').select("*").eq('phone_number', phone).execute()
             
             if response.data:
                 client_data = response.data[0]
@@ -46,7 +46,7 @@ class DBService:
                 return {'id': client_data['id'], 'name': client_data['name']}
             
             # Create new
-            new_client = {'phone': phone, 'name': name}
+            new_client = {'phone_number': phone, 'name': name}
             response = await client.table('clients').insert(new_client).execute()
             
             if response.data:
@@ -66,7 +66,7 @@ class DBService:
             return None
             
         try:
-            response = await client.table('clients').select("name").eq('phone', phone).execute()
+            response = await client.table('clients').select("name").eq('phone_number', phone).execute()
             if response.data:
                 return response.data[0]['name']
         except Exception as e:
