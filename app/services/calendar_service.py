@@ -216,7 +216,7 @@ def cancel_event_by_description(phone_number: str) -> str:
         logger.error(f"❌ Error cancelling event: {e}")
         return "Došlo k chybě při rušení rezervace."
 
-def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_time: Optional[datetime.datetime] = None, phone: str = "") -> Optional[str]:
+def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_time: Optional[datetime.datetime] = None, phone: str = "") -> Optional[dict]:
     """
     Create an event in Google Calendar.
     Returns the htmlLink of the event or None.
@@ -294,7 +294,7 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_ti
         logger.debug(f'📤 Odesílám event: {event_body}')
         event = service.events().insert(calendarId=CALENDAR_ID, body=event_body).execute()
         logger.info(f"📅 Event created: {event.get('htmlLink')}")
-        return event.get('htmlLink')
+        return {'id': event.get('id'), 'htmlLink': event.get('htmlLink')}
     except HttpError as error:
         logger.error(f'❌ Google API Error: {error.content}')
         raise RuntimeError(f"Google API Error: {error.content}")

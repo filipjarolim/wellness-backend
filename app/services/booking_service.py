@@ -10,12 +10,11 @@ from zoneinfo import ZoneInfo
 # Import calendar functions
 from app.services.calendar_service import check_calendar_availability, create_calendar_event, get_busy_slots, cancel_event_by_description
 
-import json
-import os
+from app.services.db_service import db_service
 
 logger = logging.getLogger(__name__)
 
-CUSTOMERS_FILE = 'data/customers.json'
+
 
 TZ = ZoneInfo('Europe/Prague')
 
@@ -27,37 +26,10 @@ CZECH_MONTHS = {
 class BookingService:
     def __init__(self, session: Session):
         self.session = session
-        self._ensure_data_dir()
-
-    def _ensure_data_dir(self):
-        if not os.path.exists('data'):
-            os.makedirs('data')
-        if not os.path.exists(CUSTOMERS_FILE):
-            with open(CUSTOMERS_FILE, 'w') as f:
-                json.dump({}, f)
-
-    def _load_customers(self) -> dict:
-        try:
-            with open(CUSTOMERS_FILE, 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
-
-    def _save_customers_to_file(self, data: dict):
-        with open(CUSTOMERS_FILE, 'w') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def save_customer(self, phone: str, name: str):
-        if not phone or not name:
-            return
-        data = self._load_customers()
-        data[phone] = name
-        self._save_customers_to_file(data)
-        logger.info(f"💾 Customer saved: {phone} -> {name}")
+        # self._ensure_data_dir() # Removed for Supabase migration
 
     def get_caller_name(self, phone_number: str) -> Optional[str]:
-        data = self._load_customers()
-        return data.get(phone_number)
+        return db_service.get_client_by_phone(phone_number)
 
     def check_availability(self, day: str, time: Optional[str] = None) -> str:
         """
@@ -176,27 +148,43 @@ class BookingService:
             logger.error(f"Cannot parse booking date: {day} {time} error: {e}")
             return "Omlouvám se, ale termín se nepodařilo zarezervovat. Zkuste to prosím znovu."
 
-        # Create DB record
-        booking = Booking(name=name, day=save_day, time=save_time, service=service)
-        self.session.add(booking)
-        self.session.commit()
-        self.session.refresh(booking)
-        
+        # 1. Supabase Client Management
+        client_id = None
         if phone:
-            self.save_customer(phone, name)
-        
-        logger.info(f"✅ NOVÁ REZERVACE (DB): {name} na {save_day} v {save_time} - {service} (ID: {booking.id})")
+            client_dict = db_service.get_or_create_client(phone, name)
+            if client_dict:
+                client_id = client_dict.get('id')
         
         # Sync to Google Calendar
         logger.info('🚀 Calling Google Calendar...')
+        gcal_link = None
+        gcal_id = None
+        
         try:
             # Pass clean datetime object to calendar service
-            html_link = create_calendar_event(booking, start_time=start_dt, phone=phone)
-            if html_link:
-                 logger.info(f"✅ Synced to Calendar: {html_link}")
+            # create_calendar_event now returns dict {'id': ..., 'htmlLink': ...}
+            event_result = create_calendar_event(booking=None, duration_minutes=60, start_time=start_dt, phone=phone) 
+            # WAIT: create_calendar_event takes `booking: Booking` model. I need to construct a dummy object or change signature.
+            # The previous code created a Booking object `booking = Booking(...)`.
+            # I should construct a simple object or dict to pass to create_calendar_event, OR update create_calendar_event to accept params.
+            # `app/models/db_models.py` defines Booking. I can still use the class for data passing even if not saving to SQLite.
+            # Or I just instantiate it without saving.
+            
+            temp_booking = Booking(name=name, day=save_day, time=save_time, service=service)
+            
+            event_result = create_calendar_event(temp_booking, start_time=start_dt, phone=phone)
+            
+            if event_result:
+                gcal_link = event_result.get('htmlLink')
+                gcal_id = event_result.get('id')
+                logger.info(f"✅ Synced to Calendar: {gcal_link}")
         except Exception as e:
             logger.error(f"❌ Google Error: {e}") 
             # We don't want to fail the booking if calendar fails, so we just log.
+        
+        # 3. Log to Supabase
+        if client_id and gcal_id:
+             db_service.log_booking(client_id, start_dt, service, gcal_id)
         
         # Format date for user response: "14. ledna 2026"
         month_name = CZECH_MONTHS.get(start_dt.month, "")

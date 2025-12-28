@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # Google
     GOOGLE_CALENDAR_ID: str = "primary"
     GOOGLE_CREDENTIALS_JSON: str = ""
+    
+    # Supabase
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
 
     class Config:
         env_file = ".env"
