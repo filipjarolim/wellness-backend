@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 
 TZ = ZoneInfo('Europe/Prague')
 
+CZECH_MONTHS = {
+    1: "ledna", 2: "února", 3: "března", 4: "dubna", 5: "května", 6: "června",
+    7: "července", 8: "srpna", 9: "září", 10: "října", 11: "listopadu", 12: "prosince"
+}
+
 class BookingService:
     def __init__(self, session: Session):
         self.session = session
@@ -55,20 +60,21 @@ class BookingService:
         
         return f"Yes, {day} at {time} is available."
 
-    def book_appointment(self, day: str, time: str, name: str, service: str = "general") -> dict:
+    def book_appointment(self, day: str, time: str, name: str, service: str = "general") -> str:
         """
         Book an appointment and save to DB.
+        Returns a human-readable text response for the AI to read.
         """
         if not day or not time or not name:
              logger.info(f'📥 Booking Request - Day: {day}, Time: {time}')
-             return {"result": "error", "message": "Missing details for booking."}
+             return "Omlouvám se, ale chybí mi některé údaje pro vytvoření rezervace."
 
         logger.info(f'📥 Booking Request - Day: {day}, Time: {time}')
 
         # Check availability again
         availability_msg = self.check_availability(day, time)
         if "fully booked" in availability_msg or "busy" in availability_msg:
-             return {"result": "error", "message": f"Time slot {day} {time} is already booked."}
+             return "Omlouvám se, ale termín se nepodařilo zarezervovat. Zkuste to prosím znovu."
 
         # Parse date for storage normalization and Calendar
         try:
@@ -81,7 +87,7 @@ class BookingService:
             
         except ValueError as e:
             logger.error(f"Cannot parse booking date: {day} {time} error: {e}")
-            return {"result": "error", "message": "Invalid date format."}
+            return "Omlouvám se, ale termín se nepodařilo zarezervovat. Zkuste to prosím znovu."
 
         # Create DB record
         booking = Booking(name=name, day=save_day, time=save_time, service=service)
@@ -102,4 +108,8 @@ class BookingService:
             logger.error(f"❌ Google Error: {e}") 
             # We don't want to fail the booking if calendar fails, so we just log.
         
-        return {"result": "success", "message": "Termín je úspěšně rezervován."}
+        # Format date for user response: "14. ledna 2026"
+        month_name = CZECH_MONTHS.get(start_dt.month, "")
+        formatted_day = f"{start_dt.day}. {month_name} {start_dt.year}"
+        
+        return f"Vaše rezervace na jméno {name} na {formatted_day} v {time} byla úspěšně vytvořena. Těšíme se na vás."

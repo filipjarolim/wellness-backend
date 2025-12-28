@@ -73,8 +73,8 @@ async def vapi_webhook(
                         time = arguments.get("time")
                         name = arguments.get("name")
                         service = arguments.get("service", "General Service")
-                        resp = booking_service.book_appointment(day, time, name, service)
-                        result_content = resp.get("message", "Booking failed")
+                        # book_appointment now returns a direct string message
+                        result_content = booking_service.book_appointment(day, time, name, service)
                     else:
                         logger.warning(f"⚠️ Unknown function name: {function_name}")
 
