@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlmodel import Session, select
+# from sqlmodel import Session, select
 from app.models.db_models import Booking
 
 from datetime import datetime, timedelta
@@ -12,7 +12,9 @@ from app.services.calendar_service import check_calendar_availability, create_ca
 
 from app.services.db_service import db_service
 
-logger = logging.getLogger(__name__)
+from app.core.logger import logger
+
+# logger = logging.getLogger(__name__)
 
 
 
@@ -24,16 +26,17 @@ CZECH_MONTHS = {
 }
 
 class BookingService:
-    def __init__(self, session: Session):
-        self.session = session
+    def __init__(self):
+        # self.session = session # Removed SQLModel
+        pass
         # self._ensure_data_dir() # Removed for Supabase migration
 
-    def get_caller_name(self, phone_number: str) -> Optional[str]:
-        return db_service.get_client_by_phone(phone_number)
+    async def get_caller_name(self, phone_number: str) -> Optional[str]:
+        return await db_service.get_client_by_phone(phone_number)
 
-    def check_availability(self, day: str, time: Optional[str] = None) -> str:
+    async def check_availability(self, day: str, time: Optional[str] = None) -> str:
         """
-        Check availability for a given day and optionally a time from the DB and Google Calendar.
+        Check availability (Async).
         """
         if not time:
             return f"Checking generic availability for {day} is not fully implemented yet."
@@ -46,7 +49,7 @@ class BookingService:
 
         if start_dt:
              # Check Google Calendar
-             is_calendar_free = check_calendar_availability(start_dt)
+             is_calendar_free = await check_calendar_availability(start_dt)
              if not is_calendar_free:
                  formatted_date = start_dt.strftime("%d.%m. %H:%M")
                  
@@ -60,7 +63,7 @@ class BookingService:
                  if window_start < now:
                      window_start = now
                  
-                 busy_slots = get_busy_slots(window_start, window_end)
+                 busy_slots = await get_busy_slots(window_start, window_end)
                  
                  # Scan 30min slots in the window
                  current_slot = window_start
@@ -76,7 +79,6 @@ class BookingService:
                      # Check overlap with busy_slots
                      is_busy = False
                      for b_start, b_end in busy_slots:
-                         # Overlap condition: not (SlotEnd <= BusyStart or SlotStart >= BusyEnd)
                          if not (slot_end <= b_start or current_slot >= b_end):
                              is_busy = True
                              break
@@ -85,7 +87,7 @@ class BookingService:
                          alternatives.append(current_slot.strftime("%H:%M"))
                      
                      current_slot += timedelta(minutes=30)
-                     if len(alternatives) >= 2: # Found enough alternatives
+                     if len(alternatives) >= 2: 
                          break
                          
                  if alternatives:
@@ -94,35 +96,22 @@ class BookingService:
                  
                  return f"Je mi líto, ale {formatted_date} je obsazeno a v okolí jsem nenašel volné místo."
              
-             # Use ISO format for DB check consistency
-             db_day = start_dt.strftime("%Y-%m-%d")
-             db_time = start_dt.strftime("%H:%M")
+             # DB check skipped (Calendar is Truth)
 
-        # 2. Check in DB if there is a booking for this day and time
-        # Note: We rely on exact string match if parsing failed, or ISO match if succeeded
-        statement = select(Booking).where(Booking.day == db_day, Booking.time == db_time)
-        results = self.session.exec(statement)
-        existing_booking = results.first()
-        
-        if existing_booking:
-             # Same logic could apply here for DB conflicts, but for now we focus on Calendar conflicts as primary source
-            return f"Sorry, {day} at {time} is fully booked."
-        
         return f"Ano, {day} v {time} mám volno."
 
-    def cancel_booking(self, phone_number: str) -> str:
+    async def cancel_booking(self, phone_number: str) -> str:
         """
-        Cancels a booking by looking up events with the phone number in description.
+        Cancels a booking (Async).
         """
         if not phone_number:
             return "Pro zrušení rezervace potřebuji telefonní číslo."
             
-        return cancel_event_by_description(phone_number)
+        return await cancel_event_by_description(phone_number)
 
-    def book_appointment(self, day: str, time: str, name: str, phone: str = "", service: str = "general") -> str:
+    async def book_appointment(self, day: str, time: str, name: str, phone: str = "", service: str = "general") -> str:
         """
-        Book an appointment and save to DB.
-        Returns a human-readable text response for the AI to read.
+        Book an appointment (Async).
         """
         if not day or not time or not name:
              logger.info(f'📥 Booking Request - Day: {day}, Time: {time}')
@@ -131,19 +120,16 @@ class BookingService:
         logger.info(f'📥 Booking Request - Day: {day}, Time: {time}')
 
         # Check availability again
-        availability_msg = self.check_availability(day, time)
-        if "fully booked" in availability_msg or "busy" in availability_msg:
+        availability_msg = await self.check_availability(day, time)
+        if "fully booked" in availability_msg or "busy" in availability_msg or "Je mi líto" in availability_msg:
              return "Omlouvám se, ale termín se nepodařilo zarezervovat. Zkuste to prosím znovu."
 
-        # Parse date for storage normalization and Calendar
+        # Parse date
         try:
             start_dt = datetime.strptime(f"{day} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
             logger.info(f'📅 Vypočítaný Start Time: {start_dt}')
-            
             save_day = start_dt.strftime("%Y-%m-%d")
             save_time = start_dt.strftime("%H:%M")
-            logger.info(f"📅 Parsed Date: {start_dt}")
-            
         except ValueError as e:
             logger.error(f"Cannot parse booking date: {day} {time} error: {e}")
             return "Omlouvám se, ale termín se nepodařilo zarezervovat. Zkuste to prosím znovu."
@@ -151,7 +137,7 @@ class BookingService:
         # 1. Supabase Client Management
         client_id = None
         if phone:
-            client_dict = db_service.get_or_create_client(phone, name)
+            client_dict = await db_service.get_or_create_client(phone, name)
             if client_dict:
                 client_id = client_dict.get('id')
         
@@ -161,18 +147,9 @@ class BookingService:
         gcal_id = None
         
         try:
-            # Pass clean datetime object to calendar service
-            # create_calendar_event now returns dict {'id': ..., 'htmlLink': ...}
-            event_result = create_calendar_event(booking=None, duration_minutes=60, start_time=start_dt, phone=phone) 
-            # WAIT: create_calendar_event takes `booking: Booking` model. I need to construct a dummy object or change signature.
-            # The previous code created a Booking object `booking = Booking(...)`.
-            # I should construct a simple object or dict to pass to create_calendar_event, OR update create_calendar_event to accept params.
-            # `app/models/db_models.py` defines Booking. I can still use the class for data passing even if not saving to SQLite.
-            # Or I just instantiate it without saving.
-            
             temp_booking = Booking(name=name, day=save_day, time=save_time, service=service)
             
-            event_result = create_calendar_event(temp_booking, start_time=start_dt, phone=phone)
+            event_result = await create_calendar_event(temp_booking, start_time=start_dt, phone=phone)
             
             if event_result:
                 gcal_link = event_result.get('htmlLink')
@@ -180,13 +157,11 @@ class BookingService:
                 logger.info(f"✅ Synced to Calendar: {gcal_link}")
         except Exception as e:
             logger.error(f"❌ Google Error: {e}") 
-            # We don't want to fail the booking if calendar fails, so we just log.
         
         # 3. Log to Supabase
         if client_id and gcal_id:
-             db_service.log_booking(client_id, start_dt, service, gcal_id)
+             await db_service.log_booking(client_id, start_dt, service, gcal_id)
         
-        # Format date for user response: "14. ledna 2026"
         month_name = CZECH_MONTHS.get(start_dt.month, "")
         formatted_day = f"{start_dt.day}. {month_name} {start_dt.year}"
         

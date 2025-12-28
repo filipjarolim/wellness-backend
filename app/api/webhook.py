@@ -1,19 +1,18 @@
 from fastapi import APIRouter, Request, Depends
 import logging
 from typing import Dict, Any
-from sqlmodel import Session
 
 from app.services.booking_service import BookingService
 from app.services.llm_service import get_assistant_config
-from app.core.database import get_session
+from app.core.logger import logger
+
+# logger = logging.getLogger(__name__) # Use central logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 @router.post("/webhook")
 async def vapi_webhook(
-    request: Request,
-    session: Session = Depends(get_session)
+    request: Request
 ) -> Dict[str, Any]:
     """
     Handle incoming webhooks from Vapi.ai manually to avoid validation errors
@@ -46,7 +45,7 @@ async def vapi_webhook(
         # 2. Processing Tool Calls
         if msg_type == "tool-calls":
             tool_calls = message.get("toolCalls", [])
-            booking_service = BookingService(session)
+            booking_service = BookingService()
             results = []
 
             for tool_call in tool_calls:
@@ -66,7 +65,7 @@ async def vapi_webhook(
                     if function_name == "check_availability":
                         day = arguments.get("day")
                         time = arguments.get("time")
-                        result_content = booking_service.check_availability(day, time)
+                        result_content = await booking_service.check_availability(day, time)
                         
                     elif function_name == "book_appointment":
                         day = arguments.get("day")
@@ -74,7 +73,7 @@ async def vapi_webhook(
                         name = arguments.get("name")
                         service = arguments.get("service", "General Service")
                         # book_appointment now returns a direct string message
-                        result_content = booking_service.book_appointment(day, time, name, service)
+                        result_content = await booking_service.book_appointment(day, time, name, service)
                     else:
                         logger.warning(f"⚠️ Unknown function name: {function_name}")
 

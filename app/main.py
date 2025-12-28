@@ -1,20 +1,20 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api import webhook
-import logging
-
-logging.basicConfig(level=logging.INFO)
-
+from app.core.logger import setup_logging, logger
 from contextlib import asynccontextmanager
-from sqlmodel import SQLModel
-from app.core.database import engine
+from datetime import datetime
+
+setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create tables
-    SQLModel.metadata.create_all(engine)
+    # Startup
+    logger.info("🚀 Starting AI Receptionist Backend")
     yield
     # Shutdown
+    logger.info("🛑 Shutting down backend")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -22,10 +22,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Global Exception Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"🔥 UNHANDLED ERROR: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal Server Error", "detail": "An unexpected error occurred. Please contact support."}
+    )
+
 # Include routers
 app.include_router(webhook.router, prefix="/api", tags=["Webhook"])
-
-from datetime import datetime
 
 @app.get("/")
 async def health_check():
@@ -33,7 +40,7 @@ async def health_check():
 
 @app.get("/health")
 async def health_check_std():
-    return {"status": "ok", "environment": settings.ENVIRONMENT}
+    return {"status": "ok", "environment": settings.ENVIRONMENT, "timestamp": datetime.now().isoformat()}
 
 if __name__ == "__main__":
     import uvicorn
