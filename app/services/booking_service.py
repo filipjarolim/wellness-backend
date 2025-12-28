@@ -134,14 +134,24 @@ class BookingService:
             logger.error(f"Cannot parse booking date: {day} {time} error: {e}")
             return "Omlouvám se, ale termín se nepodařilo zarezervovat. Zkuste to prosím znovu."
 
+        start_save_process = datetime.now()
+        logger.info(f"⏳ Začínám booking process pro: {name}, tel: {phone}")
+
         # 1. Supabase Client Management
         client_id = None
         if phone:
-            client_dict = await db_service.get_or_create_client(phone, name)
-            if client_dict:
-                client_id = client_dict.get('id')
+            try:
+                logger.info(f"🔍 Hledám/Vytvářím klienta v DB: {phone}")
+                client_dict = await db_service.get_or_create_client(phone, name)
+                if client_dict:
+                    client_id = client_dict.get('id')
+                    logger.info(f"✅ Klient ID {client_id} připraven.")
+                else:
+                    logger.warning("⚠️ Nepodařilo se získat ID klienta ze Supabase.")
+            except Exception as e:
+                logger.error(f"❌ Chyba při správě klienta: {e}")
         
-        # Sync to Google Calendar
+        # 2. Sync to Google Calendar
         logger.info('🚀 Calling Google Calendar...')
         gcal_link = None
         gcal_id = None
@@ -154,14 +164,27 @@ class BookingService:
             if event_result:
                 gcal_link = event_result.get('htmlLink')
                 gcal_id = event_result.get('id')
-                logger.info(f"✅ Synced to Calendar: {gcal_link}")
+                logger.info(f"✅ Synced to Calendar: {gcal_link} (ID: {gcal_id})")
+            else:
+                logger.error("❌ Calendar sync failed - no event result returned")
         except Exception as e:
             logger.error(f"❌ Google Error: {e}") 
         
         # 3. Log to Supabase
         if client_id and gcal_id:
-             await db_service.log_booking(client_id, start_dt, service, gcal_id)
+             try:
+                 logger.info(f"📝 Zapisuji rezervaci do Supabase: Client {client_id}, Event {gcal_id}")
+                 await db_service.log_booking(client_id, start_dt, service, gcal_id)
+                 logger.info("✅ Rezervace úspěšně uložena do DB.")
+             except Exception as e:
+                 logger.error(f"❌ Chyba při logování rezervace: {e}")
+        else:
+             logger.warning(f"⚠️ Přeskakuji zápis rezervace do DB (Missing: ClientID={bool(client_id)}, GCalID={bool(gcal_id)})")
         
+        
+        duration = (datetime.now() - start_save_process).total_seconds()
+        logger.info(f"🏁 Booking process completed in {duration:.2f}s")
+
         month_name = CZECH_MONTHS.get(start_dt.month, "")
         formatted_day = f"{start_dt.day}. {month_name} {start_dt.year}"
         
