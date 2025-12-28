@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     
     # Google
     GOOGLE_CALENDAR_ID: str = "primary"
+    GOOGLE_CREDENTIALS_JSON: str = ""
 
     class Config:
         env_file = ".env"

@@ -148,19 +148,24 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_ti
              logger.warning(f"⚠️ Could not parse date/time for calendar: {booking.day} {booking.time}")
              return None
 
+    # Calculate end time in local time first
     end_time = start_time + datetime.timedelta(minutes=duration_minutes)
+
+    # Convert to UTC for Google API to prevent timezone shifting issues
+    start_utc = start_time.astimezone(ZoneInfo('UTC'))
+    end_utc = end_time.astimezone(ZoneInfo('UTC'))
 
     event_body = {
         'summary': f"{booking.name} - {booking.service}",
         'location': 'Wellness Pohoda',
         'description': 'Rezervace přes AI Asistenta',
         'start': {
-            'dateTime': start_time.isoformat(),
-            'timeZone': 'Europe/Prague', # Adjust as needed
+            'dateTime': start_utc.isoformat().replace('+00:00', 'Z'),
+            'timeZone': 'UTC',
         },
         'end': {
-            'dateTime': end_time.isoformat(),
-            'timeZone': 'Europe/Prague',
+            'dateTime': end_utc.isoformat().replace('+00:00', 'Z'),
+            'timeZone': 'UTC',
         },
     }
 
