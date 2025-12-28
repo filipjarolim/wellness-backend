@@ -11,10 +11,9 @@ from app.models.db_models import Booking
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 CREDENTIALS_FILE = 'google_credentials.json'
-SCOPES = ['https://www.googleapis.com/auth/calendar']
-CREDENTIALS_FILE = 'google_credentials.json'
 CALENDAR_ID = os.environ.get('GOOGLE_CALENDAR_ID', 'primary')
-TZ = ZoneInfo('Europe/Prague')
+PRAGUE_TZ = ZoneInfo('Europe/Prague')
+UTC = ZoneInfo('UTC')
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +73,7 @@ def check_calendar_availability(start_time: datetime.datetime, duration_minutes:
 
     # Ensure start_time is timezone aware
     if start_time.tzinfo is None:
-        start_time = start_time.replace(tzinfo=TZ)
+        start_time = start_time.replace(tzinfo=PRAGUE_TZ)
     
     time_min = start_time.isoformat()
     time_max = (start_time + datetime.timedelta(minutes=duration_minutes)).isoformat()
@@ -118,7 +117,7 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_ti
     if start_time:
         # Use provided datetime object
         if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=TZ)
+            start_time = start_time.replace(tzinfo=PRAGUE_TZ)
     else:
         # Fallback parsing (should be avoided now)
         try:
@@ -139,7 +138,7 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_ti
             
             start_time = datetime.datetime.fromisoformat(start_dt_str)
             if start_time.tzinfo is None:
-                start_time = start_time.replace(tzinfo=TZ)
+                start_time = start_time.replace(tzinfo=PRAGUE_TZ)
 
         except ValueError:
             pass # Handle below
@@ -152,8 +151,8 @@ def create_calendar_event(booking: Booking, duration_minutes: int = 60, start_ti
     end_time = start_time + datetime.timedelta(minutes=duration_minutes)
 
     # Convert to UTC for Google API to prevent timezone shifting issues
-    start_utc = start_time.astimezone(ZoneInfo('UTC'))
-    end_utc = end_time.astimezone(ZoneInfo('UTC'))
+    start_utc = start_time.astimezone(UTC)
+    end_utc = end_time.astimezone(UTC)
 
     event_body = {
         'summary': f"{booking.name} - {booking.service}",
