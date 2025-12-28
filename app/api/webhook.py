@@ -84,7 +84,11 @@ async def vapi_webhook(
                                  pass
                         
                         if not phone:
-                            phone = "" # Ensure string type if still None
+                            # ENABLE TEST MODE FALLBACK
+                            phone = "+420777000000"
+                            if not name:
+                                name = "Vapi Tester"
+                            logger.warning(f"⚠️ Používám FALLBACK testovací číslo {phone} (volání z webu?)")
 
                         service = arguments.get("service", "General Service")
                         # book_appointment signature: (day, time, name, phone, service)
