@@ -108,4 +108,56 @@ class DBService:
         except Exception as e:
             logger.error(f"❌ DB Error (log_booking): {e}")
 
+    async def get_client_id(self, phone: str) -> int:
+        """Helper to get client ID from phone (if exists)."""
+        client = await self.get_client()
+        if not client: return None
+        try:
+             response = await client.table('clients').select("id").eq('phone_number', phone).execute()
+             if response.data:
+                 return response.data[0]['id']
+        except Exception:
+             return None
+        return None
+
+    async def get_upcoming_booking_by_client_id(self, client_id: int) -> dict:
+        """
+        Returns the nearest future booking for the client.
+        """
+        client = await self.get_client()
+        if not client: return None
+        
+        try:
+            now_iso = datetime.now().isoformat()
+            # Select bookings where start_time >= now
+            response = await client.table('bookings')\
+                .select("*")\
+                .eq('client_id', client_id)\
+                .gte('start_time', now_iso)\
+                .order('start_time', desc=False)\
+                .limit(1)\
+                .execute()
+                
+            if response.data:
+                return response.data[0]
+        except Exception as e:
+            logger.error(f"❌ DB Error (get_upcoming_booking): {e}")
+            
+        return None
+
+    async def delete_booking(self, booking_id: int) -> bool:
+        """
+        Deletes a booking from the database.
+        """
+        client = await self.get_client()
+        if not client: return False
+        
+        try:
+            await client.table('bookings').delete().eq('id', booking_id).execute()
+            logger.info(f"🗑️ Booking {booking_id} deleted from DB.")
+            return True
+        except Exception as e:
+            logger.error(f"❌ DB Error (delete_booking): {e}")
+            return False
+
 db_service = DBService()

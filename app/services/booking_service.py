@@ -4,8 +4,9 @@ from app.models.db_models import Booking
 
 from datetime import datetime, timedelta
 import traceback
-import logging
+# import logging # Removed standard logging
 from zoneinfo import ZoneInfo
+from fastapi import BackgroundTasks
 
 # Import calendar functions
 from app.services.calendar_service import check_calendar_availability, create_calendar_event, get_busy_slots, cancel_event_by_description
@@ -131,14 +132,98 @@ class BookingService:
 
         return f"Ano, {day} v {time} mám volno."
 
-    async def cancel_booking(self, phone_number: str) -> str:
+    async def get_active_booking(self, phone: str) -> Optional[dict]:
         """
-        Cancels a booking (Async).
+        Alias for get_upcoming_booking, ensures strict naming compliance for testing.
+        Returns active booking dict or None.
+        """
+        return await self.get_upcoming_booking(phone)
+
+    async def get_upcoming_booking(self, phone: str) -> Optional[dict]:
+        """
+        Finds the nearest future booking for a phone number.
+        """
+        # 1. Clean phone
+        phone = phone.replace(" ", "").strip()
+        
+        # 2. Get Client ID
+        client_id = await db_service.get_client_id(phone)
+        if not client_id:
+            logger.info(f"🔍 No client found for phone {phone}")
+            return None
+            
+        # 3. Get Booking
+        return await db_service.get_upcoming_booking_by_client_id(client_id)
+
+    async def cancel_active_booking(self, phone: str) -> bool:
+        """
+        Cancels the active booking for the phone number.
+        Returns True if a booking was found and cancelled, False otherwise.
+        """
+        # 1. Find Booking
+        booking = await self.get_active_booking(phone)
+        if not booking:
+            logger.warning(f"⚠️ No active booking found for {phone} to cancel.")
+            return False
+            
+        booking_id = booking.get('id')
+        gcal_id = booking.get('gcal_event_id')
+        
+        # 2. Delete from Google Calendar (Best Effort)
+        if gcal_id:
+             try:
+                 from app.services.calendar_service import get_calendar_service, CALENDAR_ID
+                 service = get_calendar_service()
+                 if service:
+                     service.events().delete(calendarId=CALENDAR_ID, eventId=gcal_id).execute()
+                     logger.info(f"🗑️ GCal Event {gcal_id} deleted.")
+             except Exception as e:
+                 logger.error(f"⚠️ Failed to delete GCal event: {e}")
+        
+        # 3. Delete from DB
+        success = False
+        if booking_id:
+            success = await db_service.delete_booking(booking_id)
+            
+        return success
+
+    async def cancel_booking(self, phone_number: str, background_tasks: Optional[BackgroundTasks] = None) -> str:
+        """
+        Vapi Tool wrapper: Cancels the nearest future booking and returns a message.
         """
         if not phone_number:
             return "Pro zrušení rezervace potřebuji telefonní číslo."
             
-        return await cancel_event_by_description(phone_number)
+        logger.info(f"❌ Processing cancellation for {phone_number}")
+        
+        # Check existence first to get date for message (before deletion)
+        booking = await self.get_active_booking(phone_number)
+        if not booking:
+             # Fallback legacy check
+             return await cancel_event_by_description(phone_number)
+
+        formatted_date = booking.get('start_time', 'unknown')
+        try:
+            formatted_date = datetime.fromisoformat(formatted_date).strftime("%d.%m. %H:%M")
+        except:
+            pass
+
+        # Perform Cancellation
+        was_cancelled = await self.cancel_active_booking(phone_number)
+        
+        if was_cancelled:
+            msg = f"Vaše rezervace na {formatted_date} byla zrušena."
+            # Notification
+            try:
+                if background_tasks:
+                    background_tasks.add_task(send_sms, phone_number, msg)
+                else:
+                    send_sms(phone_number, msg)
+            except Exception as e:
+                logger.error(f"❌ Failed to send cancellation SMS: {e}")
+            return msg
+        else:
+            return "Nepodařilo se zrušit rezervaci (chyba systému)."
 
     def normalize_name(self, name: str) -> str:
         """
@@ -159,9 +244,10 @@ class BookingService:
                 
         return name
 
-    async def send_notifications(self, phone: str, name: str, service: str, start_dt: datetime):
+    async def send_notifications(self, phone: str, name: str, service: str, start_dt: datetime, background_tasks: Optional[BackgroundTasks] = None):
         """
         Sends SMS to client and Email to owner.
+        Uses BackgroundTasks if provided, otherwise synchronous.
         """
         notifications_config = self.config.get("notifications", {})
         company_name = self.config.get("company_name", "Naše Firma")
@@ -170,7 +256,7 @@ class BookingService:
         date_str = start_dt.strftime("%d.%m.%Y")
         time_str = start_dt.strftime("%H:%M")
         
-        # 1. Send SMS to Client
+        # 1. Prepare SMS
         sms_template = notifications_config.get("sms_template", "Rezervace na {date} v {time} potvrzena.")
         try:
             sms_body = sms_template.format(
@@ -180,11 +266,18 @@ class BookingService:
                 time=time_str,
                 company_name=company_name
             )
-            send_sms(phone, sms_body)
-        except Exception as e:
-            logger.error(f"❌ Error formatting/sending SMS: {e}")
+            
+            if background_tasks:
+                logger.info(f"📨 Scheduling SMS for {phone} in background...")
+                background_tasks.add_task(send_sms, phone, sms_body)
+            else:
+                 logger.warning("⚠️ BackgroundTasks not provided, sending SMS synchronously (blocking).")
+                 send_sms(phone, sms_body)
 
-        # 2. Send Email to Owner
+        except Exception as e:
+            logger.error(f"❌ Error preparing SMS: {e}")
+
+        # 2. Prepare Email
         email_template = notifications_config.get("email_template", "Nová rezervace: {name}, {date} {time}")
         email_subject_tmpl = notifications_config.get("email_subject", "Nová rezervace")
         try:
@@ -196,11 +289,18 @@ class BookingService:
                 date=date_str,
                 time=time_str
             )
-            send_email(email_subject, email_body)
+            
+            if background_tasks:
+                logger.info(f"📨 Scheduling Email for owner in background...")
+                background_tasks.add_task(send_email, email_subject, email_body)
+            else:
+                 logger.warning("⚠️ BackgroundTasks not provided, sending Email synchronously (blocking).")
+                 send_email(email_subject, email_body)
+                 
         except Exception as e:
-             logger.error(f"❌ Error formatting/sending Email: {e}")
+             logger.error(f"❌ Error preparing Email: {e}")
 
-    async def book_appointment(self, day: str, time: str, name: str, phone: str = "", service: str = "general") -> str:
+    async def book_appointment(self, day: str, time: str, name: str, phone: str = "", service: str = "general", background_tasks: Optional[BackgroundTasks] = None) -> str:
         """
         Book an appointment (Async).
         """
@@ -281,7 +381,8 @@ class BookingService:
                  logger.info("✅ Rezervace úspěšně uložena do DB.")
                  
                  # 4. Notifications
-                 await self.send_notifications(phone, name, service, start_dt)
+                 # NOTE: We pass background_tasks here to offload sending
+                 await self.send_notifications(phone, name, service, start_dt, background_tasks=background_tasks)
                  
              except Exception as e:
                  logger.error(f"❌ Chyba při logování rezervace: {e}")

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.core.config import settings
-from app.api import webhook
+from app.api import webhook, tools
 from app.core.logger import setup_logging, logger
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -33,6 +33,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(webhook.router, prefix="/api", tags=["Webhook"])
+app.include_router(tools.router, tags=["Tools"])
 
 @app.get("/")
 async def health_check():

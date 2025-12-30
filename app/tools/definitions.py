@@ -52,4 +52,22 @@ BOOK_APPOINTMENT_TOOL = {
     }
 }
 
-ALL_TOOLS = [CHECK_AVAILABILITY_TOOL, BOOK_APPOINTMENT_TOOL]
+CANCEL_BOOKING_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "cancel_booking",
+        "description": "Cancel an existing appointment.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "phone": {
+                     "type": "string",
+                     "description": "The phone number of the customer who wants to cancel."
+                }
+            },
+            "required": [] 
+        }
+    }
+}
+
+ALL_TOOLS = [CHECK_AVAILABILITY_TOOL, BOOK_APPOINTMENT_TOOL, CANCEL_BOOKING_TOOL]

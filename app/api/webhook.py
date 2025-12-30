@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, BackgroundTasks
 import logging
 from typing import Dict, Any
 
@@ -12,7 +12,8 @@ router = APIRouter()
 
 @router.post("/webhook")
 async def vapi_webhook(
-    request: Request
+    request: Request,
+    background_tasks: BackgroundTasks
 ) -> Dict[str, Any]:
     """
     Handle incoming webhooks from Vapi.ai manually to avoid validation errors
@@ -92,7 +93,25 @@ async def vapi_webhook(
 
                         service = arguments.get("service", "General Service")
                         # book_appointment signature: (day, time, name, phone, service)
-                        result_content = await booking_service.book_appointment(day, time, name, phone, service)
+                        result_content = await booking_service.book_appointment(
+                            day, time, name, phone, service, background_tasks=background_tasks
+                        )
+
+                    elif function_name == "cancel_booking":
+                         # 1. Robust Phone Extraction for cancellation too
+                        phone = arguments.get("phone")
+                        if not phone:
+                             try:
+                                 phone = message.get("call", {}).get("customer", {}).get("number")
+                             except:
+                                 pass
+                        
+                        if not phone:
+                            phone = "+420777000000" # Test fallback
+                            logger.warning(f"⚠️ CANCEL: Používám FALLBACK číslo {phone}")
+
+                        result_content = await booking_service.cancel_booking(phone, background_tasks=background_tasks)
+
                     else:
                         logger.warning(f"⚠️ Unknown function name: {function_name}")
 

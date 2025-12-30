@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     
     # Notifications
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_PHONE_NUMBER: str = ""
+    GOSMS_CLIENT_ID: str = ""
+    GOSMS_CLIENT_SECRET: str = ""
+    GOSMS_CHANNEL_ID: str = ""
     
     SMTP_SERVER: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
