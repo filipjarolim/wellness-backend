@@ -13,6 +13,8 @@ from app.services.calendar_service import check_calendar_availability, create_ca
 from app.services.db_service import db_service
 
 from app.core.logger import logger
+from app.core.config_loader import load_company_config, get_business_hours
+from app.services.notification_service import send_sms, send_email
 
 # logger = logging.getLogger(__name__)
 
@@ -28,8 +30,9 @@ CZECH_MONTHS = {
 class BookingService:
     def __init__(self):
         # self.session = session # Removed SQLModel
-        pass
+        self.config = load_company_config()
         # self._ensure_data_dir() # Removed for Supabase migration
+
 
     async def get_caller_name(self, phone_number: str) -> Optional[str]:
         return await db_service.get_client_by_phone(phone_number)
@@ -37,18 +40,46 @@ class BookingService:
     async def check_availability(self, day: str, time: Optional[str] = None) -> str:
         """
         Check availability (Async).
+        Respects External Configuration (Business Rules).
         """
+        company_name = self.config.get('company_name', 'naše společnost')
+
+        # Generic message if only day is provided (simplified for now)
         if not time:
-            return f"Checking generic availability for {day} is not fully implemented yet."
+            return f"Pro zjištění dostupnosti v {company_name} prosím uveďte i čas."
         
         try:
+            # Parse Requested Date
             start_dt = datetime.strptime(f"{day} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+            day_name = start_dt.strftime("%A").lower() # e.g. "monday"
+            
+            # 1. Check Business Hours (Config)
+            hours = get_business_hours(self.config, day_name)
+            
+            if not hours:
+                # Closed (null in JSON)
+                days_cz = {
+                    "monday": "pondělí", "tuesday": "úterý", "wednesday": "středu",
+                    "thursday": "čtvrtek", "friday": "pátek", "saturday": "sobotu", "sunday": "neděli"
+                }
+                day_cz = days_cz.get(day_name, day_name)
+                return f"V {day_cz} máme bohužel zavřeno."
+
+            open_start = hours.get('start')
+            open_end = hours.get('end')
+            
+            # Simple Time Comparison (String compare usually works for HH:MM 24h, ensures Leading Zero)
+            req_time = start_dt.strftime("%H:%M")
+            
+            if not (open_start <= req_time < open_end):
+                return f"Máme otevřeno jen od {open_start} do {open_end}."
+
         except ValueError as e:
             logger.error(f"Date parsing failed for {day} {time}: {e}")
             return f"Invalid date or time format. Please provide YYYY-MM-DD and HH:MM."
 
         if start_dt:
-             # Check Google Calendar
+             # Check Google Calendar availability ...
              is_calendar_free = await check_calendar_availability(start_dt)
              if not is_calendar_free:
                  formatted_date = start_dt.strftime("%d.%m. %H:%M")
@@ -127,6 +158,47 @@ class BookingService:
                 name = name.replace(wrong, correct)
                 
         return name
+
+    async def send_notifications(self, phone: str, name: str, service: str, start_dt: datetime):
+        """
+        Sends SMS to client and Email to owner.
+        """
+        notifications_config = self.config.get("notifications", {})
+        company_name = self.config.get("company_name", "Naše Firma")
+        
+        # Helper variables
+        date_str = start_dt.strftime("%d.%m.%Y")
+        time_str = start_dt.strftime("%H:%M")
+        
+        # 1. Send SMS to Client
+        sms_template = notifications_config.get("sms_template", "Rezervace na {date} v {time} potvrzena.")
+        try:
+            sms_body = sms_template.format(
+                name=name,
+                service=service,
+                date=date_str,
+                time=time_str,
+                company_name=company_name
+            )
+            send_sms(phone, sms_body)
+        except Exception as e:
+            logger.error(f"❌ Error formatting/sending SMS: {e}")
+
+        # 2. Send Email to Owner
+        email_template = notifications_config.get("email_template", "Nová rezervace: {name}, {date} {time}")
+        email_subject_tmpl = notifications_config.get("email_subject", "Nová rezervace")
+        try:
+            email_subject = email_subject_tmpl.format(name=name, date=date_str, time=time_str)
+            email_body = email_template.format(
+                name=name,
+                phone=phone,
+                service=service,
+                date=date_str,
+                time=time_str
+            )
+            send_email(email_subject, email_body)
+        except Exception as e:
+             logger.error(f"❌ Error formatting/sending Email: {e}")
 
     async def book_appointment(self, day: str, time: str, name: str, phone: str = "", service: str = "general") -> str:
         """
@@ -207,6 +279,10 @@ class BookingService:
                  logger.info(f"📝 Zapisuji rezervaci do Supabase: Client {client_id}, Event {gcal_id}")
                  await db_service.log_booking(client_id, start_dt, service, gcal_id)
                  logger.info("✅ Rezervace úspěšně uložena do DB.")
+                 
+                 # 4. Notifications
+                 await self.send_notifications(phone, name, service, start_dt)
+                 
              except Exception as e:
                  logger.error(f"❌ Chyba při logování rezervace: {e}")
         else:

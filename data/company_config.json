@@ -1,0 +1,25 @@
+{
+    "company_name": "Barber Shop Ostrava",
+    "phone_contact": "+420777000000",
+    "owner_email": "jarolimfilip07@gmail.com",
+    "timezone": "Europe/Prague",
+    "business_hours": {
+        "monday": { "start": "09:00", "end": "18:00" },
+        "tuesday": { "start": "09:00", "end": "18:00" },
+        "wednesday": { "start": "09:00", "end": "18:00" },
+        "thursday": { "start": "09:00", "end": "18:00" },
+        "friday": { "start": "09:00", "end": "18:00" },
+        "saturday": { "start": "09:00", "end": "14:00" },
+        "sunday": null
+    },
+    "settings": {
+        "slot_duration_minutes": 30
+    },
+    "notifications": {
+        "sms_enabled": true,
+        "email_enabled": true,
+        "sms_template": "Dobrý den, potvrzujeme rezervaci: {service}, datum: {date} v {time}. Těšíme se, {company_name}.",
+        "email_subject": "💰 Nová rezervace: {name}",
+        "email_template": "Nová rezervace!\n\nKlient: {name}\nTelefon: {phone}\nSlužba: {service}\nDatum: {date}\nČas: {time}\n\nZkontrolujte kalendář."
+    }
+}
